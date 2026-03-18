@@ -1,8 +1,13 @@
-import React from 'react';
-import { motion } from 'motion/react';
-import { Home, LayoutGrid, BookOpen, User, ArrowRight } from 'lucide-react';
+import React, { useState } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
+import { Home, LayoutGrid, BookOpen, User, ArrowRight, ChevronDown } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
-import { Button, Modal } from './UI';
+import { Button, Modal, Toast } from './UI';
+
+// --- FIREBASE IMPORTS ---
+import { collection, addDoc, query, where, getDocs, or } from 'firebase/firestore';
+import { db } from '../firebase'; 
+// ------------------------
 
 export const MainApp: React.FC = () => {
   const { 
@@ -13,12 +18,100 @@ export const MainApp: React.FC = () => {
     isDevDialogOpen,
     closeDevDialog,
     devDialogMessage,
-    showDevDialog,
     isPrivacyModalOpen,
     setPrivacyModalOpen,
     isAboutModalOpen,
-    setAboutModalOpen
+    setAboutModalOpen,
+    addWaitlistEntry,
+    toast,
+    showToast,
+    hideToast,
+    setUser
   } = useAppStore();
+
+  // Waitlist Form State
+  const [formData, setFormData] = useState({ name: '', email: '', phone: '', city: '', customCity: '' });
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const handleCloseModal = () => {
+    setWaitlistModalOpen(false);
+    setFormData({ name: '', email: '', phone: '', city: '', customCity: '' });
+  };
+
+  const handleWaitlistSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSubmitting(true);
+
+    // Validation Regex
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    const phoneRegex = /^\d{10}$/;
+    
+    // Resolve final city choice
+    const finalCity = formData.city === 'Other' ? formData.customCity.trim() : formData.city;
+
+    if (!emailRegex.test(formData.email)) {
+      showToast('Please enter a valid email address.', 'error');
+      setIsSubmitting(false);
+      return;
+    }
+
+    if (!phoneRegex.test(formData.phone)) {
+      showToast('Please enter a valid 10-digit mobile number.', 'error');
+      setIsSubmitting(false);
+      return;
+    }
+
+    if (!finalCity) {
+      showToast('Please select or enter your city.', 'error');
+      setIsSubmitting(false);
+      return;
+    }
+
+    try {
+      const waitlistRef = collection(db, "waitlist");
+
+      // Check Firebase for duplicates using the OR operator
+      const duplicateQuery = query(
+        waitlistRef,
+        or(
+          where("email", "==", formData.email),
+          where("phone", "==", formData.phone)
+        )
+      );
+
+      const querySnapshot = await getDocs(duplicateQuery);
+
+      if (!querySnapshot.empty) {
+        showToast('Warning: This email or phone number is already on the waitlist.', 'error');
+        setIsSubmitting(false);
+        return;
+      }
+
+      const newEntry = {
+        name: formData.name,
+        email: formData.email,
+        phone: formData.phone,
+        city: finalCity,
+        timestamp: new Date().toISOString()
+      };
+
+      // If no duplicates, add the new document to Firebase
+      await addDoc(waitlistRef, newEntry);
+
+      // Update local state and persistence
+      addWaitlistEntry(newEntry);
+      setUser(formData.name);
+      
+      showToast('Registration successful! You are securely on the waitlist.', 'success');
+      handleCloseModal();
+      
+    } catch (error) {
+      console.error("Error adding document: ", error);
+      showToast('An error occurred while registering. Please try again later.', 'error');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   const renderTab = () => {
     switch (activeTab) {
@@ -30,63 +123,121 @@ export const MainApp: React.FC = () => {
   };
 
   return (
-    <div className="h-screen w-full bg-navy-900 flex flex-col">
+    <div className="h-screen w-full bg-navy-900 flex flex-col relative">
+      {/* Toast Notification Component */}
+      <Toast 
+        isOpen={toast.isOpen} 
+        message={toast.message} 
+        type={toast.type} 
+        onClose={hideToast} 
+      />
+
       <div className="flex-1 overflow-y-auto no-scrollbar">
         {renderTab()}
       </div>
 
       {/* Bottom Navigation */}
       <div className="bg-navy-800/80 backdrop-blur-xl border-t border-white/5 px-6 py-4 flex justify-between items-center pb-8">
-        <NavButton 
-          active={activeTab === 'home'} 
-          onClick={() => setActiveTab('home')} 
-          icon={<Home size={24} />} 
-          label="Home" 
-        />
-        <NavButton 
-          active={activeTab === 'features'} 
-          onClick={() => setActiveTab('features')} 
-          icon={<LayoutGrid size={24} />} 
-          label="Features" 
-        />
-        <NavButton 
-          active={activeTab === 'learn'} 
-          onClick={() => setActiveTab('learn')} 
-          icon={<BookOpen size={24} />} 
-          label="Learn" 
-        />
-        <NavButton 
-          active={activeTab === 'profile'} 
-          onClick={() => setActiveTab('profile')} 
-          icon={<User size={24} />} 
-          label="Profile" 
-        />
+        <NavButton active={activeTab === 'home'} onClick={() => setActiveTab('home')} icon={<Home size={24} />} label="Home" />
+        <NavButton active={activeTab === 'features'} onClick={() => setActiveTab('features')} icon={<LayoutGrid size={24} />} label="Features" />
+        <NavButton active={activeTab === 'learn'} onClick={() => setActiveTab('learn')} icon={<BookOpen size={24} />} label="Learn" />
+        <NavButton active={activeTab === 'profile'} onClick={() => setActiveTab('profile')} icon={<User size={24} />} label="Profile" />
       </div>
 
       {/* Waitlist Modal */}
-      <Modal 
-        isOpen={isWaitlistModalOpen} 
-        onClose={() => setWaitlistModalOpen(false)} 
-        title="Join the Waitlist"
-      >
-        <form className="space-y-4" onSubmit={(e) => { e.preventDefault(); setWaitlistModalOpen(false); alert('Registration successful!'); }}>
-          <input type="text" placeholder="Full Name" className="w-full bg-navy-700 border border-white/10 rounded-xl px-4 py-3 text-white focus:border-neon-green outline-none transition-colors" required />
-          <input type="email" placeholder="Email Address" className="w-full bg-navy-700 border border-white/10 rounded-xl px-4 py-3 text-white focus:border-neon-green outline-none transition-colors" required />
-          <input type="tel" placeholder="Phone Number" className="w-full bg-navy-700 border border-white/10 rounded-xl px-4 py-3 text-white focus:border-neon-green outline-none transition-colors" required />
-          <input type="text" placeholder="City" className="w-full bg-navy-700 border border-white/10 rounded-xl px-4 py-3 text-white focus:border-neon-green outline-none transition-colors" required />
-          <Button fullWidth type="submit">Register Now</Button>
+      <Modal isOpen={isWaitlistModalOpen} onClose={handleCloseModal} title="Join the Waitlist">
+        <form className="space-y-4" onSubmit={handleWaitlistSubmit}>
+          <input 
+            type="text" 
+            placeholder="Full Name" 
+            value={formData.name}
+            onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+            className="w-full bg-navy-700 border border-white/10 rounded-xl px-4 py-3 text-white focus:border-neon-green outline-none transition-colors" 
+            required 
+            disabled={isSubmitting}
+          />
+          <input 
+            type="email" 
+            placeholder="Email Address" 
+            value={formData.email}
+            onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+            className="w-full bg-navy-700 border border-white/10 rounded-xl px-4 py-3 text-white focus:border-neon-green outline-none transition-colors" 
+            required 
+            disabled={isSubmitting}
+          />
+          
+          {/* Indian Phone Input Formatter */}
+          <div className="flex w-full bg-navy-700 border border-white/10 rounded-xl overflow-hidden focus-within:border-neon-green transition-colors">
+            <div className="px-4 py-3 bg-white/5 text-white/60 border-r border-white/10 flex items-center justify-center font-medium">
+              +91
+            </div>
+            <input 
+              type="tel" 
+              placeholder="Mobile Number (10 Digits)" 
+              value={formData.phone}
+              onChange={(e) => setFormData({ ...formData, phone: e.target.value.replace(/\D/g, '').slice(0, 10) })}
+              className="flex-1 bg-transparent px-4 py-3 text-white outline-none" 
+              required 
+              disabled={isSubmitting}
+            />
+          </div>
+
+          {/* City Selection Formatter */}
+          <div className="relative">
+            <select
+              value={formData.city}
+              onChange={(e) => setFormData({ ...formData, city: e.target.value })}
+              className="w-full bg-navy-700 border border-white/10 rounded-xl px-4 py-3 text-white focus:border-neon-green outline-none transition-colors appearance-none"
+              required
+              disabled={isSubmitting}
+            >
+              <option value="" disabled>Select City</option>
+              <option value="Ahmedabad">Ahmedabad</option>
+              <option value="Surat">Surat</option>
+              <option value="Vadodara">Vadodara</option>
+              <option value="Rajkot">Rajkot</option>
+              <option value="Gandhinagar">Gandhinagar</option>
+              <option value="Mumbai">Mumbai</option>
+              <option value="Delhi">Delhi</option>
+              <option value="Bangalore">Bangalore</option>
+              <option value="Pune">Pune</option>
+              <option value="Hyderabad">Hyderabad</option>
+              <option value="Chennai">Chennai</option>
+              <option value="Other">Other...</option>
+            </select>
+            <div className="absolute inset-y-0 right-4 flex items-center pointer-events-none text-white/40">
+              <ChevronDown size={18} />
+            </div>
+          </div>
+
+          <AnimatePresence>
+            {formData.city === 'Other' && (
+              <motion.input 
+                initial={{ opacity: 0, height: 0, marginTop: 0 }}
+                animate={{ opacity: 1, height: 'auto', marginTop: 16 }}
+                exit={{ opacity: 0, height: 0, marginTop: 0 }}
+                type="text" 
+                placeholder="Enter your custom city" 
+                value={formData.customCity}
+                onChange={(e) => setFormData({ ...formData, customCity: e.target.value })}
+                className="w-full bg-navy-700 border border-white/10 rounded-xl px-4 py-3 text-white focus:border-neon-green outline-none transition-colors" 
+                required 
+                disabled={isSubmitting}
+              />
+            )}
+          </AnimatePresence>
+
+          <Button fullWidth type="submit" disabled={isSubmitting} className="mt-2">
+            {isSubmitting ? 'Registering...' : 'Register Now'}
+          </Button>
           <p className="text-[10px] text-white/40 text-center leading-relaxed">
-            Aapa Capital is currently in closed beta. Joining the waitlist does not guarantee immediate access to financial services. Trading and demat features are not yet active.
+            Aapa Capital is currently in closed beta. Joining the waitlist does not guarantee immediate access to financial services.
           </p>
         </form>
       </Modal>
 
       {/* Dev Dialog */}
-      <Modal 
-        isOpen={isDevDialogOpen} 
-        onClose={closeDevDialog} 
-        title="Coming Soon"
-      >
+      <Modal isOpen={isDevDialogOpen} onClose={closeDevDialog} title="Information">
         <div className="space-y-4">
           <p className="text-white/70 leading-relaxed">
             {devDialogMessage}
@@ -96,20 +247,14 @@ export const MainApp: React.FC = () => {
       </Modal>
 
       {/* Privacy Policy Modal */}
-      <Modal
-        isOpen={isPrivacyModalOpen}
-        onClose={() => setPrivacyModalOpen(false)}
-        title="Privacy Policy"
-      >
+      <Modal isOpen={isPrivacyModalOpen} onClose={() => setPrivacyModalOpen(false)} title="Privacy Policy">
         <div className="max-h-[60vh] overflow-y-auto pr-2 space-y-4 text-sm text-white/70 leading-relaxed no-scrollbar">
           <h4 className="text-white font-bold">Aapa Capital Pre-Launch Privacy Policy</h4>
           <p className="text-xs italic">Effective: March 18, 2026</p>
-          
           <section>
             <h5 className="text-white font-semibold mb-1">1. Introduction</h5>
-            <p>Aapa Capital Pre-Launch ("App") is a waitlist app for our upcoming stock trading platform. We collect data transparently to manage pre-registrations. This policy complies with Google Play, DPDP Act 2023 (India), and other laws.</p>
+            <p>Aapa Capital Pre-Launch ("App") is a waitlist app for our upcoming stock trading platform. We collect data transparently to manage pre-registrations.</p>
           </section>
-
           <section>
             <h5 className="text-white font-semibold mb-1">2. Information We Collect</h5>
             <ul className="list-disc pl-4 space-y-1">
@@ -118,75 +263,15 @@ export const MainApp: React.FC = () => {
               <li>No financial data or logins.</li>
             </ul>
           </section>
-
-          <section>
-            <h5 className="text-white font-semibold mb-1">3. How We Use Your Information</h5>
-            <ul className="list-disc pl-4 space-y-1">
-              <li>Manage waitlist and send updates.</li>
-              <li>Analyze usage to improve the app.</li>
-              <li>Comply with laws.</li>
-            </ul>
-          </section>
-
-          <section>
-            <h5 className="text-white font-semibold mb-1">4. Sharing Your Information</h5>
-            <p>We do not sell data. Shared with:</p>
-            <ul className="list-disc pl-4 space-y-1">
-              <li>Cloud services (Firebase for storage).</li>
-              <li>Email providers for notifications.</li>
-              <li>Legal authorities if required.</li>
-            </ul>
-          </section>
-
-          <section>
-            <h5 className="text-white font-semibold mb-1">5. Data Storage and Security</h5>
-            <p>Data stored securely in India/EU servers, encrypted. Retained as needed for waitlist (~2 years) or until deletion request.</p>
-          </section>
-
-          <section>
-            <h5 className="text-white font-semibold mb-1">6. Your Rights</h5>
-            <p>Request access, correction, or deletion anytime at info@aapacapital.com. Withdraw consent via same email. Response within 30 days.</p>
-          </section>
-
-          <section>
-            <h5 className="text-white font-semibold mb-1">7. No User Accounts</h5>
-            <p>No accounts created; data tied to waitlist entry only.</p>
-          </section>
-
-          <section>
-            <h5 className="text-white font-semibold mb-1">8. Children's Privacy</h5>
-            <p>App not for children under 18. Delete any child data discovered.</p>
-          </section>
-
-          <section>
-            <h5 className="text-white font-semibold mb-1">9. Changes to This Policy</h5>
-            <p>We'll email updates. Continued use means acceptance.</p>
-          </section>
-
-          <section>
-            <h5 className="text-white font-semibold mb-1">10. Contact Us</h5>
-            <p>info@aapacapital.com</p>
-            <p>Aapa Capital Technologies, Ahmedabad, Gujarat, India.</p>
-          </section>
         </div>
         <Button fullWidth className="mt-6" onClick={() => setPrivacyModalOpen(false)}>Close</Button>
       </Modal>
 
       {/* About Modal */}
-      <Modal
-        isOpen={isAboutModalOpen}
-        onClose={() => setAboutModalOpen(false)}
-        title="About Aapa Capital"
-      >
+      <Modal isOpen={isAboutModalOpen} onClose={() => setAboutModalOpen(false)} title="About Aapa Capital">
         <div className="space-y-4 text-white/70 leading-relaxed">
           <p>
             Aapa Capital is a forward-thinking fintech company based in Ahmedabad, Gujarat. We are building the next generation of trading infrastructure for the Indian markets.
-          </p>
-          <p>
-            Our mission is to democratize access to sophisticated trading tools and provide a seamless, high-performance experience for retail traders and investors.
-          </p>
-          <p>
-            Currently, we are in a pre-launch phase, building our core platform with a focus on speed, reliability, and smart automation.
           </p>
           <div className="pt-4 border-t border-white/5">
             <p className="text-sm font-semibold text-white">Contact Support</p>
@@ -204,9 +289,7 @@ const NavButton = ({ active, onClick, icon, label }: { active: boolean, onClick:
     onClick={onClick}
     className={`flex flex-col items-center gap-1 transition-all duration-300 ${active ? 'text-neon-green' : 'text-white/40'}`}
   >
-    <motion.div
-      animate={active ? { scale: 1.2, y: -2 } : { scale: 1, y: 0 }}
-    >
+    <motion.div animate={active ? { scale: 1.2, y: -2 } : { scale: 1, y: 0 }}>
       {icon}
     </motion.div>
     <span className="text-[10px] font-medium uppercase tracking-wider">{label}</span>
@@ -214,8 +297,7 @@ const NavButton = ({ active, onClick, icon, label }: { active: boolean, onClick:
 );
 
 const HomeTab = () => {
-  const setWaitlistModalOpen = useAppStore(state => state.setWaitlistModalOpen);
-  const showDevDialog = useAppStore(state => state.showDevDialog);
+  const { setWaitlistModalOpen, showDevDialog, user } = useAppStore();
 
   return (
     <div className="p-6 pt-12 space-y-8">
@@ -228,21 +310,26 @@ const HomeTab = () => {
           <h1 className="text-3xl font-bold text-white">Aapa Capital</h1>
         </div>
         <div className="w-10 h-10 bg-navy-700 rounded-full flex items-center justify-center border border-white/10">
-          <User size={20} className="text-white/60" />
+          <User size={20} className={user?.isRegistered ? "text-neon-green" : "text-white/60"} />
         </div>
       </div>
 
-      {/* Hero Card */}
-      <div className="bg-gradient-to-br from-neon-green/20 to-blue-500/20 border border-white/10 rounded-[32px] p-8 relative overflow-hidden">
+      <div className="bg-linear-to-br from-neon-green/20 to-blue-500/20 border border-white/10 rounded-4xl p-8 relative overflow-hidden">
         <div className="relative z-10">
           <h3 className="text-2xl font-bold text-white mb-2">Pre-Registration</h3>
-          <p className="text-white/70 mb-6 max-w-[200px]">Join the early access waitlist for our upcoming trading platform.</p>
-          <Button onClick={() => setWaitlistModalOpen(true)}>Join Waitlist</Button>
+          <p className="text-white/70 mb-6 max-w-50">Join the early access waitlist for our upcoming trading platform.</p>
+          <Button 
+            onClick={() => user?.isRegistered 
+              ? showDevDialog("You are securely registered on the waitlist. We will notify you when we are ready to launch!") 
+              : setWaitlistModalOpen(true)
+            }
+          >
+            {user?.isRegistered ? 'View Your Status' : 'Join Waitlist'}
+          </Button>
         </div>
         <div className="absolute top-0 right-0 w-32 h-32 bg-neon-green/20 blur-3xl rounded-full -mr-16 -mt-16" />
       </div>
 
-      {/* Future Actions */}
       <div className="space-y-4">
         <h4 className="text-white font-semibold px-2">Future Capabilities</h4>
         <div className="space-y-3">
@@ -260,7 +347,7 @@ const HomeTab = () => {
       </div>
 
       <p className="text-center text-white/30 text-[10px] leading-relaxed pb-8">
-        Aapa Capital is currently in closed beta. Joining the waitlist does not guarantee immediate access to financial services. Trading and demat features are not yet active.
+        Aapa Capital is currently in closed beta. Joining the waitlist does not guarantee immediate access to financial services.
       </p>
     </div>
   );
@@ -294,18 +381,9 @@ const LearnTab = () => (
     <h1 className="text-3xl font-bold text-white mb-8">Learn</h1>
     <div className="space-y-6">
       {[
-        { 
-          q: "What is Aapa Capital?", 
-          a: "Aapa Capital is a next-generation fintech platform focused on providing smart trading tools for stocks and F&O. We are currently in a pre-launch phase." 
-        },
-        { 
-          q: "How does the waitlist work?", 
-          a: "By joining the waitlist, you'll be among the first to be notified when our trading services go live. Access will be granted in phases based on registration order." 
-        },
-        { 
-          q: "Is my data secure?", 
-          a: "Yes, we use industry-standard encryption to protect your information. Your data is only used for waitlist updates and regulatory compliance." 
-        }
+        { q: "What is Aapa Capital?", a: "Aapa Capital is a next-generation fintech platform focused on providing smart trading tools for stocks and F&O. We are currently in a pre-launch phase." },
+        { q: "How does the waitlist work?", a: "By joining the waitlist, you'll be among the first to be notified when our trading services go live. Access will be granted in phases based on registration order." },
+        { q: "Is my data secure?", a: "Yes, we use industry-standard encryption to protect your information. Your data is only used for waitlist updates and regulatory compliance." }
       ].map((item, i) => (
         <div key={i} className="bg-navy-800 border border-white/5 rounded-[28px] overflow-hidden">
           <div className="p-6">
@@ -320,8 +398,7 @@ const LearnTab = () => (
 );
 
 const ProfileTab = () => {
-  const setPrivacyModalOpen = useAppStore(state => state.setPrivacyModalOpen);
-  const setAboutModalOpen = useAppStore(state => state.setAboutModalOpen);
+  const { setPrivacyModalOpen, setAboutModalOpen, user } = useAppStore();
 
   return (
     <div className="p-6 pt-12 space-y-8">
@@ -330,24 +407,26 @@ const ProfileTab = () => {
           👤
         </div>
         <div>
-          <h2 className="text-2xl font-bold text-white">Waitlist User</h2>
-          <p className="text-white/40">Registered on March 18, 2026</p>
+          <h2 className="text-2xl font-bold text-white">
+            {user?.isRegistered ? `Welcome, ${user.name}` : 'Waitlist App'}
+          </h2>
+          <p className={user?.isRegistered ? "text-neon-green/80 mt-1 font-medium" : "text-white/40"}>
+            {user?.isRegistered ? 'Registered Successfully ✓' : 'Not logged in yet'}
+          </p>
         </div>
       </div>
 
       <div className="space-y-4">
         <h4 className="text-white font-semibold px-2">Settings</h4>
-        <div className="bg-navy-800 border border-white/5 rounded-[32px] overflow-hidden">
+        <div className="bg-navy-800 border border-white/5 rounded-4xl overflow-hidden">
           {[
-            { label: 'Account Settings', link: '#' },
-            { label: 'Security', link: '#' },
             { label: 'Notifications', link: '#' },
             { label: 'Help & Support', link: 'mailto:info@aapacapital.com' },
           ].map((item, i) => (
             <button 
               key={item.label}
               onClick={() => { if (item.link.startsWith('mailto:')) window.location.href = item.link; }}
-              className={`w-full p-5 flex items-center justify-between text-white/70 hover:bg-white/5 transition-colors ${i !== 3 ? 'border-b border-white/5' : ''}`}
+              className={`w-full p-5 flex items-center justify-between text-white/70 hover:bg-white/5 transition-colors ${i !== 1 ? 'border-b border-white/5' : ''}`}
             >
               <span>{item.label}</span>
               <ArrowRight size={16} className="opacity-20" />
@@ -358,7 +437,7 @@ const ProfileTab = () => {
 
       <div className="space-y-4">
         <h4 className="text-white font-semibold px-2">Legal</h4>
-        <div className="bg-navy-800 border border-white/5 rounded-[32px] overflow-hidden">
+        <div className="bg-navy-800 border border-white/5 rounded-4xl overflow-hidden">
           {[
             { label: 'Privacy Policy', action: () => setPrivacyModalOpen(true) },
             { label: 'Terms of Service', action: () => window.open('https://example.com/terms', '_blank') },
@@ -376,9 +455,7 @@ const ProfileTab = () => {
         </div>
       </div>
 
-      <Button variant="ghost" fullWidth className="text-red-400 hover:text-red-300">Log Out</Button>
-      
-      <p className="text-center text-white/20 text-[10px] pb-8">
+      <p className="text-center text-white/20 text-[10px] pb-8 pt-4">
         App Version 1.0.0 (Waitlist Edition)
       </p>
     </div>

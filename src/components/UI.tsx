@@ -1,8 +1,48 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { X } from 'lucide-react';
+import { X, CheckCircle, AlertCircle } from 'lucide-react';
 import { cn } from '../utils';
 
+// --- Toast Component ---
+interface ToastProps {
+  isOpen: boolean;
+  message: string;
+  type: 'success' | 'error' | '';
+  onClose: () => void;
+}
+
+export const Toast: React.FC<ToastProps> = ({ isOpen, message, type, onClose }) => {
+  return (
+    <AnimatePresence>
+      {isOpen && (
+        <motion.div
+          initial={{ opacity: 0, y: -50, scale: 0.95 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, y: -50, scale: 0.95 }}
+          transition={{ type: "spring", stiffness: 400, damping: 30 }}
+          className="fixed top-6 left-1/2 -translate-x-1/2 z-[100] px-4 w-full max-w-md pointer-events-none"
+        >
+          <div className={cn(
+            "flex items-start gap-3 px-4 py-3 rounded-2xl shadow-2xl border backdrop-blur-xl pointer-events-auto",
+            type === 'success' 
+              ? "bg-neon-green/10 border-neon-green/30 text-neon-green" 
+              : "bg-red-500/10 border-red-500/30 text-red-400"
+          )}>
+            <div className="mt-0.5">
+              {type === 'success' ? <CheckCircle size={20} /> : <AlertCircle size={20} />}
+            </div>
+            <p className="text-sm font-medium flex-1 leading-snug">{message}</p>
+            <button onClick={onClose} className="opacity-70 hover:opacity-100 transition-opacity p-1 -mr-2 -mt-1 rounded-full hover:bg-white/10">
+              <X size={16} />
+            </button>
+          </div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+};
+
+// --- Modal Component ---
 interface ModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -42,6 +82,7 @@ export const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children }
   );
 };
 
+// --- Button Component ---
 interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: 'primary' | 'secondary' | 'outline' | 'ghost';
   size?: 'sm' | 'md' | 'lg';
@@ -57,10 +98,10 @@ export const Button: React.FC<ButtonProps> = ({
   ...props 
 }) => {
   const variants = {
-    primary: 'bg-neon-green text-navy-900 font-bold hover:brightness-110 active:scale-95',
-    secondary: 'bg-navy-700 text-white font-semibold hover:bg-navy-600 active:scale-95',
-    outline: 'border border-neon-green/30 text-neon-green font-semibold hover:bg-neon-green/5 active:scale-95',
-    ghost: 'text-white/60 hover:text-white hover:bg-white/5 active:scale-95',
+    primary: 'bg-neon-green text-navy-900 font-bold hover:brightness-110 active:scale-95 disabled:opacity-70 disabled:active:scale-100',
+    secondary: 'bg-navy-700 text-white font-semibold hover:bg-navy-600 active:scale-95 disabled:opacity-70 disabled:active:scale-100',
+    outline: 'border border-neon-green/30 text-neon-green font-semibold hover:bg-neon-green/5 active:scale-95 disabled:opacity-70 disabled:active:scale-100',
+    ghost: 'text-white/60 hover:text-white hover:bg-white/5 active:scale-95 disabled:opacity-70 disabled:active:scale-100',
   };
 
   const sizes = {
@@ -71,7 +112,7 @@ export const Button: React.FC<ButtonProps> = ({
 
   return (
     <motion.button
-      whileTap={{ scale: 0.96 }}
+      whileTap={props.disabled ? {} : { scale: 0.96 }}
       className={cn(
         'transition-all duration-200 flex items-center justify-center gap-2',
         variants[variant],

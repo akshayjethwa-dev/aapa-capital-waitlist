@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "66552767965",
+    "project_id": "aapa-capital-waitlist-a99bd",
+    "storage_bucket": "aapa-capital-waitlist-a99bd.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:66552767965:android:0ba46d2c2ad00d2ed20234",
+        "android_client_info": {
+          "package_name": "com.aapacapital.waitlist"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyArVNggS6X-ahx8KHadTEN2ASSxzbpItsc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
