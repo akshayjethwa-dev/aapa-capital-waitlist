@@ -1,0 +1,10 @@
+[{
+  "relation": ["delegate_permission/common.handle_all_urls"],
+  "target": {
+    "namespace": "android_app",
+    "package_name": "com.aapacapital.waitlist",
+    "sha256_cert_fingerprints": [
+      "27:36:FB:6C:7F:C4:8E:61:98:EF:A6:D1:08:00:C6:1F:A4:36:70:89:3B:88:BA:A0:C6:DB:C8:43:E1:F8:A2:65"
+    ]
+  }
+}]
